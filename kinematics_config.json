@@ -1,0 +1,16 @@
+{
+  "geometry": {
+    "base_motor_radii_m": [0.15, 0.15, 0.15],
+    "platform_joint_radius_m": 0.14,
+    "lower_link_lengths_m": [0.08, 0.08, 0.08],
+    "upper_link_lengths_m": [0.09, 0.09, 0.09],
+    "home_height_m": 0.135,
+    "joint_z_offset_m": 0.0,
+    "max_tilt_deg": 3.0,
+    "max_height_delta_m": 0.001
+  },
+  "actuators": {
+    "elbow_branches": [-1, -1, -1],
+    "servo_directions": [1, 1, 1]
+  }
+}

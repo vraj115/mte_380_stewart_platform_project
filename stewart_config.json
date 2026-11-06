@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-11-05T12:38:23.993986",
+  "camera": {
+    "index": 1,
+    "frame_width": 640,
+    "frame_height": 480
+  },
+  "platform": {
+    "top_plate_diameter_m": 0.3,
+    "center_px": [
+      376,
+      220
+    ],
+    "radius_px": 224,
+    "pixel_to_meter_ratio": 0.0006696428571428571
+  },
+  "ball_detection": {
+    "lower_hsv": [
+      7,
+      56,
+      123
+    ],
+    "upper_hsv": [
+      22,
+      255,
+      188
+    ]
+  },
+  "servos": {
+    "port": "COM5",
+    "baud_rate": 9600,
+    "current_angles_deg": [
+      30,
+      41,
+      59
+    ],
+    "neutral_angles_deg": [
+      30,
+      41,
+      45
+    ],
+    "min_angles_deg": [
+      10,
+      15,
+      21
+    ],
+    "max_angles_deg": [
+      42,
+      51,
+      59
+    ]
+  }
+}
