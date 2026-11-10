@@ -113,7 +113,7 @@ class StewartKinematics:
             "home_height_m", geometry.get("home_height_m")
         )
         self.max_tilt = _positive(
-            "max_tilt_deg", geometry.get("max_tilt_deg", 3.0)
+            "max_tilt_deg", geometry.get("max_tilt_deg", 5.0)
         )
         self.max_height_delta = _positive(
             "max_height_delta_m", geometry.get("max_height_delta_m", 0.005)
@@ -329,7 +329,7 @@ def _synthetic_self_test() -> None:
             "lower_link_lengths_m": [0.035] * 3,
             "upper_link_lengths_m": [0.090] * 3,
             "home_height_m": 0.095,
-            "max_tilt_deg": 3.0,
+            "max_tilt_deg": 5.0,
             "max_height_delta_m": 0.005,
         },
         "actuators": {"elbow_branches": [-1] * 3, "servo_directions": [1] * 3},

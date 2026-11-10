@@ -446,7 +446,7 @@ def main():
 
     if not (
         math.isfinite(args.max_tilt)
-        and 0 < args.max_tilt <= 3.0
+        and 0 < args.max_tilt <= 5.0
     ):
         parser.error(
             "Maximum tilt must be between 0 and 8 degrees"
