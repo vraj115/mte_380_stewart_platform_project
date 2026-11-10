@@ -304,19 +304,32 @@ class StewartKinematics:
                 )
         return tuple(float(v) for v in angles)
 
-    def format_serial_command(self, angles_deg: tuple[float, float, float]) -> bytes:
-        """Format values for the existing Arduino comma-separated line protocol.
+    def format_serial_command(
+        self, angles_deg: tuple[float, float, float], decimals: int = 0
+    ) -> bytes:
+        """Format values for the Arduino comma-separated line protocol.
 
-        This prepares bytes only. It never opens a serial port. The current
-        Arduino sketch accepts integer degree triplets, e.g. b'15,16,14\\n'.
+        This prepares bytes only. It never opens a serial port.
+
+        decimals=0 gives the original integer protocol, e.g. b'15,16,14\\n'.
+        decimals=1 gives tenths of a degree, e.g. b'15.0,16.3,14.2\\n', which
+        the updated servo_controller.ino accepts. Whole-degree steps are about
+        0.7 deg of plate tilt on this mechanism, which is too coarse to hold a
+        ball still, so the PID controller uses decimals=1.
         """
         if len(angles_deg) != 3:
             raise KinematicsError("Expected exactly three servo angles.")
-        values = tuple(int(round(float(a))) for a in angles_deg)
+        if decimals not in (0, 1, 2):
+            raise KinematicsError("decimals must be 0, 1 or 2.")
+        values = tuple(round(float(a), decimals) for a in angles_deg)
         for i, v in enumerate(values):
             if not self.minimum_servo[i] <= v <= self.maximum_servo[i]:
                 raise KinematicsError(f"Rounded servo {i + 1} angle out of bounds.")
-        return (",".join(map(str, values)) + "\n").encode("ascii")
+        if decimals == 0:
+            text = ",".join(str(int(v)) for v in values)
+        else:
+            text = ",".join(f"{v:.{decimals}f}" for v in values)
+        return (text + "\n").encode("ascii")
 
 
 def _synthetic_self_test() -> None:
@@ -358,11 +371,13 @@ def _synthetic_self_test() -> None:
             f"induced yaw {yaw:+.5f} deg"
         )
     try:
-        k.calculate_servo_angles(4, 0)
+        k.calculate_servo_angles(6, 0)  # beyond the 5 deg synthetic limit
     except KinematicsError:
         print("Unsafe tilt correctly rejected.")
     else:
         raise AssertionError("Safety tilt test failed")
+    assert k.format_serial_command((15.04, 16.26, 14.0)) == b"15,16,14\n"
+    assert k.format_serial_command((15.04, 16.26, 14.0), decimals=1) == b"15.0,16.3,14.0\n"
     print("All synthetic tests passed.")
 
 

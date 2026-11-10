@@ -8,11 +8,25 @@ Uses:
     kinematics_config.json
 
 Arduino: PCA9685 channels 0, 3, 7.
-Serial: comma-separated angles at 9600 baud.
+Serial: comma-separated angles in tenths of a degree, baud rate from
+stewart_config.json (115200). Requires the servo_controller.ino in this
+folder to be uploaded (the older sketch only accepts whole degrees at 9600).
 
 Usage:
-    python pid_controller.py
-    python pid_controller.py --live --kp 10 --max-tilt 8 --log
+    python pid_controller.py                 # monitor only, no servo commands
+    python pid_controller.py --live --log    # balance with the default gains
+    python pid_controller.py --live --kp 20 --ki 8 --kd 25 --max-tilt 5 --log
+
+Units: kp is degrees of tilt per metre of ball offset, kd is degrees per
+(metre/second), ki is degrees per (metre*second).
+
+Tuning notes (from the logged runs of 2026-11-10, see CHANGES.md):
+    * The loop has roughly 0.2 s of dead time (camera + serial + servos) and
+      the ball accelerates about 0.07 m/s^2 per commanded degree. That limits
+      how much gain is usable: kp much above ~40 makes the ball orbit the
+      centre and grow outward, whatever kd is.
+    * kd needs to be about as large as kp (kd/kp of 0.8-1.2 s).
+    * Run python analyze_log.py after a --log run to re-measure these.
 
 Controls:
     SPACE = Start/pause balancing
@@ -43,17 +57,38 @@ from kinematics import KinematicsError, StewartKinematics
 
 ROOT = Path(__file__).resolve().parent
 
+# Servo angles are sent in tenths of a degree. Whole degrees are roughly
+# 0.7 deg of plate tilt per step on this mechanism, which is too coarse.
+SERIAL_DECIMALS = 1
+
 
 # ==================================================
 # PID CONTROLLER
 # ==================================================
 
 class PID:
+    """One axis of the controller. Output is in degrees of tilt."""
 
-    def __init__(self, kp, ki, kd):
+    def __init__(
+        self,
+        kp,
+        ki,
+        kd,
+        derivative_tau=0.08,
+        integral_limit_deg=2.5
+    ):
         self.kp = kp
         self.ki = ki
         self.kd = kd
+
+        # Low-pass time constant on the derivative. This filter is inside
+        # the loop, so its lag adds directly to the loop delay: keep it as
+        # small as the camera noise allows.
+        self.derivative_tau = derivative_tau
+
+        # Largest tilt the integral term alone may ask for.
+        self.integral_limit_deg = integral_limit_deg
+
         self.reset()
 
     def reset(self):
@@ -61,7 +96,11 @@ class PID:
         self.previous_error = None
         self.filtered_derivative = 0.0
 
-    def update(self, error, dt):
+    @property
+    def integral_term(self):
+        return self.ki * self.integral
+
+    def update(self, error, dt, integrate=True):
 
         dt = max(0.001, min(dt, 0.2))
 
@@ -75,20 +114,24 @@ class PID:
         self.previous_error = error
 
         # Filter derivative noise
-        tau = 0.15
-        alpha = dt / (tau + dt)
+        alpha = dt / (self.derivative_tau + dt)
 
         self.filtered_derivative += alpha * (
             raw_derivative - self.filtered_derivative
         )
 
-        # Integral anti-windup
-        self.integral += error * dt
+        # Integral with anti-windup: the caller stops integration while
+        # the tilt command is saturated, and the term itself is clamped.
+        if integrate and self.ki > 0:
 
-        self.integral = max(
-            -0.1,
-            min(0.1, self.integral)
-        )
+            self.integral += error * dt
+
+            limit = self.integral_limit_deg / self.ki
+
+            self.integral = max(
+                -limit,
+                min(limit, self.integral)
+            )
 
         return (
             self.kp * error
@@ -132,7 +175,7 @@ def reachable_tilt(solver, roll, pitch):
         )
 
         command = solver.format_serial_command(
-            angles
+            angles, SERIAL_DECIMALS
         )
 
         return roll, pitch, angles, command, False
@@ -144,7 +187,7 @@ def reachable_tilt(solver, roll, pitch):
         )
 
         home_command = solver.format_serial_command(
-            home_angles
+            home_angles, SERIAL_DECIMALS
         )
 
         best = (
@@ -172,7 +215,7 @@ def reachable_tilt(solver, roll, pitch):
                 )
 
                 command = solver.format_serial_command(
-                    angles
+                    angles, SERIAL_DECIMALS
                 )
 
             except KinematicsError:
@@ -302,12 +345,12 @@ def confirms_angles(reply, expected_command):
     try:
 
         actual = tuple(
-            int(v.strip())
+            float(v.strip())
             for v in reply.split(":", 1)[1].split(",")
         )
 
         expected = tuple(
-            int(v)
+            float(v)
             for v in expected_command.decode(
                 "ascii"
             ).strip().split(",")
@@ -318,7 +361,11 @@ def confirms_angles(reply, expected_command):
 
     return (
         len(actual) == 3
-        and actual == expected
+        and len(expected) == 3
+        and all(
+            abs(a - e) <= 0.051
+            for a, e in zip(actual, expected)
+        )
     )
 
 
@@ -376,37 +423,79 @@ def main():
     parser.add_argument(
         "--kp",
         type=float,
-        default=40.0
+        default=20.0,
+        help="deg of tilt per m of ball offset (default 20)"
     )
 
     parser.add_argument(
         "--ki",
         type=float,
-        default=0.0
+        default=8.0,
+        help="deg per (m*s); removes steady offset (default 8)"
     )
 
     parser.add_argument(
         "--kd",
         type=float,
-        default=0.0
+        default=25.0,
+        help="deg per (m/s); damping (default 25)"
+    )
+
+    parser.add_argument(
+        "--d-filter",
+        type=float,
+        default=0.08,
+        help="derivative low-pass time constant in s (default 0.08)"
+    )
+
+    parser.add_argument(
+        "--i-limit",
+        type=float,
+        default=2.5,
+        help="largest tilt the integral term may command, deg"
     )
 
     parser.add_argument(
         "--max-tilt",
         type=float,
-        default=8.0
+        default=5.0
     )
 
     parser.add_argument(
         "--tilt-rate",
         type=float,
-        default=12.0
+        default=60.0,
+        help="tilt slew limit in deg/s (default 60). A low value "
+             "adds lag and makes the ball spiral outward."
     )
 
     parser.add_argument(
         "--rate",
         type=float,
-        default=12.0
+        default=30.0,
+        help="maximum control rate in Hz; the loop never runs "
+             "faster than the camera delivers frames (default 30)"
+    )
+
+    parser.add_argument(
+        "--trim-roll",
+        type=float,
+        default=0.0,
+        help="constant roll offset in deg to level the plate"
+    )
+
+    parser.add_argument(
+        "--trim-pitch",
+        type=float,
+        default=0.0,
+        help="constant pitch offset in deg to level the plate"
+    )
+
+    parser.add_argument(
+        "--lost-timeout",
+        type=float,
+        default=0.4,
+        help="seconds the ball may go undetected before pausing"
     )
 
     parser.add_argument(
@@ -446,26 +535,59 @@ def main():
 
     if not (
         math.isfinite(args.max_tilt)
-        and 0 < args.max_tilt <= 5.0
+        and 0 < args.max_tilt <= 15.0
     ):
         parser.error(
-            "Maximum tilt must be between 0 and 8 degrees"
+            "Maximum tilt must be between 0 and 15 degrees "
+            "(and no more than max_tilt_deg in kinematics_config.json)"
         )
 
     if not (
         math.isfinite(args.tilt_rate)
-        and 0 < args.tilt_rate <= 30
+        and 0 < args.tilt_rate <= 500
     ):
         parser.error(
-            "Invalid tilt rate"
+            "Tilt rate must be between 0 and 500 deg/s"
         )
 
     if not (
         math.isfinite(args.rate)
-        and 1 <= args.rate <= 15
+        and 1 <= args.rate <= 120
     ):
         parser.error(
-            "Command rate must be between 1 and 15 Hz"
+            "Command rate must be between 1 and 120 Hz"
+        )
+
+    if not (
+        math.isfinite(args.d_filter)
+        and 0 <= args.d_filter <= 1.0
+    ):
+        parser.error(
+            "Derivative filter must be between 0 and 1 s"
+        )
+
+    if not (
+        math.isfinite(args.i_limit)
+        and 0 <= args.i_limit <= args.max_tilt
+    ):
+        parser.error(
+            "Integral limit must be between 0 and the maximum tilt"
+        )
+
+    if not (
+        math.isfinite(args.lost_timeout)
+        and 0 <= args.lost_timeout <= 2.0
+    ):
+        parser.error(
+            "Lost-ball timeout must be between 0 and 2 s"
+        )
+
+    if not all(
+        math.isfinite(v) and abs(v) <= args.max_tilt
+        for v in (args.trim_roll, args.trim_pitch)
+    ):
+        parser.error(
+            "Trim must be smaller than the maximum tilt"
         )
 
     # ==============================================
@@ -503,7 +625,8 @@ def main():
     neutral = solver.format_serial_command(
         solver.calculate_servo_angles(
             0.0, 0.0
-        )
+        ),
+        SERIAL_DECIMALS
     )
 
     print("Neutral command:", neutral)
@@ -511,13 +634,17 @@ def main():
     pid_x = PID(
         args.kp,
         args.ki,
-        args.kd
+        args.kd,
+        args.d_filter,
+        args.i_limit
     )
 
     pid_y = PID(
         args.kp,
         args.ki,
-        args.kd
+        args.kd,
+        args.d_filter,
+        args.i_limit
     )
 
     # ==============================================
@@ -585,6 +712,18 @@ def main():
     last_roll = 0.0
     last_pitch = 0.0
 
+    # Anti-windup: integration stops while the tilt is saturated
+    saturated = False
+
+    # Short detection dropouts no longer pause balancing
+    last_seen = prev_update
+
+    # Diagnostics shown on screen and printed on exit
+    loop_dt = 0.0
+    active_time = 0.0
+    learned_roll = 0.0
+    learned_pitch = 0.0
+
     limit_notice = ""
 
     status = (
@@ -632,7 +771,9 @@ def main():
         )
 
         print(
-            f"Maximum tilt: {args.max_tilt} degrees"
+            f"Maximum tilt: {args.max_tilt} degrees, "
+            f"slew {args.tilt_rate} deg/s, "
+            f"up to {args.rate:g} Hz"
         )
 
         print(
@@ -669,7 +810,11 @@ def main():
                 "servo1_deg",
                 "servo2_deg",
                 "servo3_deg",
-                "mode"
+                "mode",
+                "dt_s",
+                "saturated",
+                "i_roll_deg",
+                "i_pitch_deg"
             ])
 
             print(
@@ -730,6 +875,56 @@ def main():
                 "Neutral position commanded."
             )
 
+            # Confirm the Arduino understood the command. This catches
+            # a baud-rate mismatch or the old whole-degree sketch before
+            # any balancing is attempted.
+            ack_deadline = time.monotonic() + 2.0
+            acknowledged = False
+            startup_error = ""
+
+            while (
+                not acknowledged
+                and not startup_error
+                and time.monotonic() < ack_deadline
+            ):
+
+                for reply in read_arduino_replies(
+                    ser,
+                    rx_buffer
+                ):
+
+                    if confirms_angles(reply, neutral):
+                        acknowledged = True
+
+                    elif reply.startswith("ERR:"):
+                        startup_error = reply
+
+                time.sleep(0.02)
+
+            if not acknowledged:
+
+                print(
+                    "\nArduino did not acknowledge the neutral command"
+                    + (
+                        f": {startup_error}"
+                        if startup_error
+                        else " (no valid reply)."
+                    )
+                )
+
+                print(
+                    "Upload servo_controller/servo_controller.ino from "
+                    "this folder (decimal angles, 115200 baud) and check "
+                    f"that baud_rate in stewart_config.json ({baud}) "
+                    "matches Serial.begin() in the sketch."
+                )
+
+                return
+
+            print(
+                "Arduino acknowledged neutral."
+            )
+
         # ==========================================
         # MAIN FEEDBACK LOOP
         # ==========================================
@@ -777,7 +972,17 @@ def main():
             # LOST BALL HANDLING
             # ======================================
 
-            if active and not found:
+            if found:
+                last_seen = now
+
+            # A single missed detection used to pause balancing and send
+            # the plate to neutral. Hold the last command instead, and
+            # only pause when the ball stays missing.
+            if (
+                active
+                and not found
+                and now - last_seen > args.lost_timeout
+            ):
 
                 active = False
                 status = "BALL LOST: PAUSED"
@@ -812,8 +1017,15 @@ def main():
 
                 prev_update = now
 
+                # The 0.75 factor stops timing jitter from skipping
+                # every other camera frame when --rate equals the
+                # camera frame rate.
                 next_update = (
-                    now + 1.0 / args.rate
+                    now + 0.75 / args.rate
+                )
+
+                loop_dt += 0.1 * (
+                    min(dt, 0.5) - loop_dt
                 )
 
                 error_x = -float(x_m)
@@ -821,17 +1033,26 @@ def main():
 
                 if active or not args.live:
 
+                    # Integrate only while balancing and not saturated
+                    integrate = active and not saturated
+
                     # X error controls pitch
+                    # (+pitch accelerates the ball toward +x)
                     pitch = (
                         args.pitch_sign *
-                        pid_x.update(error_x, dt)
+                        pid_x.update(error_x, dt, integrate)
+                        + args.trim_pitch
                     )
 
                     # Y error controls roll
+                    # (+roll accelerates the ball toward -y)
                     roll = (
                         args.roll_sign *
-                        pid_y.update(error_y, dt)
+                        pid_y.update(error_y, dt, integrate)
+                        + args.trim_roll
                     )
+
+                    wanted_tilt = math.hypot(roll, pitch)
 
                     # Maximum combined tilt
                     roll, pitch = limit_vector(
@@ -874,8 +1095,33 @@ def main():
 
                             limit_notice = ""
 
+                        saturated = (
+                            clipped
+                            or wanted_tilt > args.max_tilt
+                        )
+
                         last_roll = roll
                         last_pitch = pitch
+
+                        if active:
+
+                            active_time += min(dt, 0.2)
+
+                            # Slow average of the tilt needed to hold
+                            # the ball still (trim + integral term).
+                            blend = min(dt, 0.2) / 3.0
+
+                            learned_roll += blend * (
+                                args.trim_roll
+                                + args.roll_sign * pid_y.integral_term
+                                - learned_roll
+                            )
+
+                            learned_pitch += blend * (
+                                args.trim_pitch
+                                + args.pitch_sign * pid_x.integral_term
+                                - learned_pitch
+                            )
 
                         if (
                             active
@@ -932,6 +1178,8 @@ def main():
                     last_roll = 0.0
                     last_pitch = 0.0
 
+                    saturated = False
+
                     limit_notice = ""
 
                 if writer is not None:
@@ -951,6 +1199,16 @@ def main():
                             "ACTIVE"
                             if active
                             else status
+                        ),
+                        round(dt, 4),
+                        int(saturated),
+                        round(
+                            args.roll_sign * pid_y.integral_term,
+                            4
+                        ),
+                        round(
+                            args.pitch_sign * pid_x.integral_term,
+                            4
                         )
                     ])
 
@@ -1097,8 +1355,9 @@ def main():
             # CAMERA DISPLAY
             # ======================================
 
+            # Reuse this frame's detection instead of detecting twice
             display, _, _, _ = (
-                detector.draw_detection(frame)
+                detector.draw_detection(frame, detection)
             )
 
             if center_px is not None:
@@ -1147,6 +1406,14 @@ def main():
                         f"Roll={roll:+.2f} deg "
                         f"Pitch={pitch:+.2f} deg "
                         f"(max {args.max_tilt:g})"
+                    ),
+
+                    (
+                        f"Loop {1.0 / loop_dt:4.1f} Hz  "
+                        f"I-term roll={args.roll_sign * pid_y.integral_term:+.2f} "
+                        f"pitch={args.pitch_sign * pid_x.integral_term:+.2f}"
+                        if loop_dt > 0
+                        else "Loop -- Hz"
                     ),
 
                     (
@@ -1418,6 +1685,23 @@ def main():
 
         if csv_file is not None:
             csv_file.close()
+
+        if active_time > 15.0:
+
+            print(
+                f"Tilt needed to hold the ball still, averaged over "
+                f"the last seconds of balancing: "
+                f"roll {learned_roll:+.2f} deg, "
+                f"pitch {learned_pitch:+.2f} deg."
+            )
+
+            print(
+                "If these are larger than about 0.3 deg the plate is "
+                "not level at neutral. Start next time with "
+                f"--trim-roll {learned_roll:.2f} "
+                f"--trim-pitch {learned_pitch:.2f} "
+                "(or re-level the neutral angles)."
+            )
 
         print(
             "Controller stopped."

@@ -190,8 +190,12 @@ class BallDetector:
             float(y_m)
         )
 
-    def draw_detection(self, frame):
-        """Draw platform, Cartesian axes, and ball location."""
+    def draw_detection(self, frame, detection=None):
+        """Draw platform, Cartesian axes, and ball location.
+
+        Pass the tuple already returned by detect_ball(frame) as
+        `detection` to avoid running the detector a second time.
+        """
         overlay = frame.copy()
 
         cx, cy = self.platform_center
@@ -266,7 +270,10 @@ class BallDetector:
             1
         )
 
-        found, center, radius, x_m, y_m = self.detect_ball(frame)
+        if detection is None:
+            detection = self.detect_ball(frame)
+
+        found, center, radius, x_m, y_m = detection
 
         if found:
             cv2.circle(

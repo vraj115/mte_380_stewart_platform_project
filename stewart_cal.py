@@ -48,7 +48,7 @@ class StewartPlatformCalibrator:
         # Servo / Arduino configuration
         self.ser = None
         self.servo_port = "COM5"   # CHANGE THIS to your Arduino COM port
-        self.baud_rate = 9600
+        self.baud_rate = 115200  # must match Serial.begin() in servo_controller.ino
 
         # Must match the safe range expected by the Arduino sketch
         self.ABS_MIN_ANGLE = 0

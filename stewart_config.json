@@ -1,7 +1,7 @@
 {
   "timestamp": "2026-11-05T12:38:23.993986",
   "camera": {
-    "index": 1,
+    "index": 0,
     "frame_width": 640,
     "frame_height": 480
   },
@@ -27,8 +27,8 @@
     ]
   },
   "servos": {
-    "port": "COM5",
-    "baud_rate": 9600,
+    "port": "COM10",
+    "baud_rate": 115200,
     "current_angles_deg": [
       30,
       41,
@@ -45,8 +45,8 @@
       21
     ],
     "max_angles_deg": [
-      42,
-      51,
+      40,
+      50,
       59
     ]
   }
