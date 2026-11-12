@@ -1373,7 +1373,7 @@ def main():
             cv2.circle(
                 display,
                 detector.platform_center,
-                7,
+                14,
                 (255, 0, 255),
                 2
             )

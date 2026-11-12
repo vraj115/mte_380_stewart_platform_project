@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trajectory Tracking Theory</title>
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --surface: #ffffff;
+    --ink: #1d2126;
+    --muted: #5d6670;
+    --line: #dcd9d0;
+    --accent: #0b6e99;
+    --accent-soft: #e2f0f6;
+    --ref: #b0189a;
+    --ball: #e8791a;
+    --trail: #1c8a3c;
+    --warn: #b3261e;
+    --plate: #e9e7e0;
+    --code-bg: #efede6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c;
+      --surface: #1e2227;
+      --ink: #e8eaed;
+      --muted: #a0a8b2;
+      --line: #343a42;
+      --accent: #5db9e0;
+      --accent-soft: #1d3440;
+      --ref: #ee6bdc;
+      --ball: #ff9a3d;
+      --trail: #5fd07f;
+      --warn: #ff8a80;
+      --plate: #2a2f36;
+      --code-bg: #272c33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 17px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 780px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 1.35rem; margin: 56px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 28px 0 4px; }
+  p { margin: 10px 0; }
+  .lede { color: var(--muted); font-size: 1.1rem; margin-bottom: 24px; }
+  .num { color: var(--accent); font-weight: 700; margin-right: 8px; font-variant-numeric: tabular-nums; }
+  code, kbd {
+    font: 0.88em/1.4 Consolas, "Cascadia Mono", Menlo, monospace;
+    background: var(--code-bg); padding: 2px 5px; border-radius: 4px;
+  }
+  pre {
+    background: var(--code-bg); padding: 12px 14px; border-radius: 8px;
+    overflow-x: auto; font: 0.86rem/1.5 Consolas, "Cascadia Mono", Menlo, monospace; margin: 12px 0;
+  }
+  pre code { background: none; padding: 0; font: inherit; }
+  .eq {
+    background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+    border-radius: 6px; padding: 12px 16px; margin: 14px 0; overflow-x: auto;
+    font: 1.08rem/1.7 Cambria, "Times New Roman", serif; white-space: nowrap;
+  }
+  .eq small { font: 0.82rem/1.4 "Segoe UI", system-ui, sans-serif; color: var(--muted); white-space: normal; display: block; margin-top: 4px; }
+  .eq i, p i.v, li i.v, td i.v { font-family: Cambria, "Times New Roman", serif; font-size: 1.05em; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 16px 0; }
+  .note { background: var(--accent-soft); border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+  .pipeline { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; margin: 16px 0; font-size: 0.85rem; }
+  .pipeline div {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; flex: 1 1 110px; text-align: center; line-height: 1.3;
+  }
+  .pipeline div b { display: block; }
+  .pipeline div span { color: var(--muted); }
+  .pipeline div.hot { border-color: var(--accent); background: var(--accent-soft); }
+  .table-wrap { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  canvas { display: block; width: 100%; border-radius: 8px; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 18px; margin: 14px 0 4px; }
+  .controls label { display: block; font-size: 0.85rem; color: var(--muted); }
+  .controls select, .controls input[type=range] { width: 100%; margin-top: 4px; accent-color: var(--accent); }
+  .controls select {
+    font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink);
+  }
+  .controls output { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 10px 0; font-size: 0.95rem; }
+  .toggles label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .toggles input { accent-color: var(--accent); width: 18px; height: 18px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0; }
+  .stat { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+  .stat span { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat b { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+  .stat.bad b { color: var(--warn); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.82rem; color: var(--muted); margin: 6px 0; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .caption { font-size: 0.85rem; color: var(--muted); margin: 6px 0 0; }
+  button {
+    font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent);
+    background: var(--accent); color: var(--surface); cursor: pointer;
+  }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Making the ball draw shapes</h1>
+<p class="lede">The theory behind <code>trajectory_demo.py</code>: how to turn a star or a figure 8 into plate tilts, and why the same PID that balances the ball is not enough on its own to follow a moving target.</p>
+
+<div class="note">
+  <b>Short version.</b> Balancing holds the ball at one fixed point. Tracking moves that point along a shape. Plan a smooth reference position for every instant, work out the acceleration that reference needs, and tilt the plate to give the ball exactly that acceleration (feedforward). The PID then only corrects the small leftover error (feedback). In simulation this takes the circle from about 40&nbsp;mm of error to about 4&nbsp;mm.
+</div>
+
+<div class="pipeline" aria-label="Signal flow from shape to ball">
+  <div class="hot"><b>Planner</b><span>shape &rarr; ref(t)</span></div>
+  <div class="hot"><b>Feedforward</b><span>ref accel &divide; K</span></div>
+  <div><b>PID</b><span>on ref &minus; ball</span></div>
+  <div><b>Tilt limits</b><span>max tilt, slew</span></div>
+  <div><b>Kinematics</b><span>tilt &rarr; 3 servos</span></div>
+  <div><b>Ball</b><span>rolls</span></div>
+  <div><b>Camera</b><span>ball position</span></div>
+</div>
+<p class="caption">The two highlighted blocks are new. Everything else is what <code>pid_controller.py</code> already does.</p>
+
+<h2><span class="num">1</span>Path and trajectory are different things</h2>
+<p>A <b>path</b> is geometry only: the set of points that make up a star. A <b>trajectory</b> is a path plus a timetable: where the ball should be at every instant. The controller needs the trajectory, because the plate has to produce the right acceleration at the right time.</p>
+<p>The same path can be feasible or impossible depending on the timetable. A 60&nbsp;mm circle in 8 seconds needs about half a degree of tilt. The same circle in 2 seconds needs more than the plate can give. Choosing the timetable is called <b>time scaling</b>, and it is where most of the planning work is.</p>
+
+<h2><span class="num">2</span>The model: tilt is acceleration</h2>
+<p>A ball rolling without slipping on a plate tilted by a small angle <i class="v">&theta;</i> accelerates at</p>
+<div class="eq">
+  <i>a</i> = <i>g</i> sin <i>&theta;</i> / (1 + <i>I</i> / <i>m r</i><sup>2</sup>)
+  <small>For a hollow ball (ping-pong), <i>I</i> = &#8532; <i>m r</i><sup>2</sup>, so <i>a</i> = 0.6 <i>g</i> sin <i>&theta;</i>, about 0.103 m/s&sup2; per degree.</small>
+</div>
+<p>Position is not controlled directly. Tilt sets <b>acceleration</b>, and the ball position is that acceleration integrated twice. The logs from this platform give a lower gain than the ideal value, plus a delay:</p>
+<div class="eq">
+  <i>x&#776;</i>(<i>t</i>) = <i>K</i> &middot; <i>&theta;</i>(<i>t</i> &minus; <i>&tau;</i>)
+  <small><i>K</i> = 0.070 m/s&sup2; per degree and <i>&tau;</i> = 0.20 s, measured by <code>analyze_log.py</code>. The same equation holds for y, with roll in place of pitch.</small>
+</div>
+<p>This one line is the whole plant model, and both the planner and the controller are built on it. Pitch moves the ball along x and roll moves it along y, so the two axes are planned and controlled separately.</p>
+
+<h2><span class="num">3</span>Describing the shapes</h2>
+<h3>Smooth curves</h3>
+<p>A circle and a figure 8 are written as functions of an angle <i class="v">&phi;</i> that grows steadily with time, <i class="v">&phi;</i> = 2&pi;<i class="v">t</i> / <i class="v">T</i>, where <i class="v">T</i> is the lap time:</p>
+<div class="eq">
+  Circle:&nbsp;&nbsp; <i>x</i> = <i>R</i> cos <i>&phi;</i>,&nbsp;&nbsp; <i>y</i> = <i>R</i> sin <i>&phi;</i><br>
+  Figure 8:&nbsp;&nbsp; <i>x</i> = <i>R</i> sin <i>&phi;</i>,&nbsp;&nbsp; <i>y</i> = <i>R</i> sin <i>&phi;</i> cos <i>&phi;</i>
+</div>
+<p>These are smooth everywhere, so their accelerations are finite everywhere. For the circle the acceleration has constant size <i class="v">R</i>(2&pi;/<i class="v">T</i>)&sup2; and always points at the centre.</p>
+
+<h3>Shapes with corners</h3>
+<p>A star, square or triangle is a list of <b>waypoints</b> joined by straight lines. The five-pointed star is five points on a circle, visited by skipping one each time.</p>
+<p>The ball cannot go round a sharp corner at speed: changing direction instantly needs infinite acceleration. So the ball must stop at each corner, and each straight segment becomes a rest-to-rest move.</p>
+
+<h2><span class="num">4</span>Time scaling: how to move along a line</h2>
+<p>For a segment from point <b>A</b> to point <b>B</b> taking time <i class="v">T</i><sub>s</sub>, write the position as</p>
+<div class="eq">
+  <b>p</b>(<i>t</i>) = <b>A</b> + (<b>B</b> &minus; <b>A</b>) &middot; <i>s</i>(<i>u</i>),&nbsp;&nbsp; <i>u</i> = <i>t</i> / <i>T</i><sub>s</sub>
+  <small><i>s</i> runs from 0 to 1 and says what fraction of the segment has been covered.</small>
+</div>
+<p>The simplest choice, <i class="v">s</i> = <i class="v">u</i> (constant speed), asks the ball to jump from rest to full speed instantly. The demo uses the <b>minimum-jerk</b> polynomial instead:</p>
+<div class="eq">
+  <i>s</i>(<i>u</i>) = 10<i>u</i><sup>3</sup> &minus; 15<i>u</i><sup>4</sup> + 6<i>u</i><sup>5</sup>
+  <small>Speed and acceleration are both zero at the start and at the end.</small>
+</div>
+
+<div class="card">
+  <svg id="scalingPlot" viewBox="0 0 720 230" role="img" aria-label="Position, speed and acceleration for constant-speed and minimum-jerk time scaling" style="width:100%;height:auto;display:block"></svg>
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>Minimum jerk</span>
+    <span><i style="background:var(--muted)"></i>Constant speed</span>
+  </div>
+  <p class="caption">Constant speed needs an infinite spike of acceleration at each end (arrows). Minimum jerk starts and ends at zero acceleration, so the plate tilt starts and ends level.</p>
+</div>
+
+<p>For a segment of length <i class="v">L</i> the peaks are:</p>
+<div class="eq">
+  <i>v</i><sub>max</sub> = 1.875 <i>L</i> / <i>T</i><sub>s</sub>&nbsp;&nbsp;&nbsp;&nbsp; <i>a</i><sub>max</sub> = 5.77 <i>L</i> / <i>T</i><sub>s</sub><sup>2</sup>
+</div>
+<p>Acceleration falls with the <b>square</b> of the time. Doubling the segment time needs a quarter of the tilt.</p>
+<p>The same polynomial is used twice more in the demo: to glide the ball from wherever it is to the start of the shape when you press <kbd>SPACE</kbd>, and (as a speed ramp) to start the circle and figure 8 gently, since those begin at full speed.</p>
+
+<h2><span class="num">5</span>Is the trajectory feasible?</h2>
+<p>Because tilt is acceleration, the plate's tilt limit is an acceleration limit:</p>
+<div class="eq">
+  <i>a</i><sub>ref</sub> &le; <i>K</i> &middot; <i>&theta;</i><sub>budget</sub>
+  <small>The demo gives feedforward 60% of the 5&deg; limit (3&deg;, or 0.21 m/s&sup2;) and keeps the rest for feedback. It refuses to run a shape that needs more and suggests a slower lap time.</small>
+</div>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Shape (60 mm)</th><th>Default lap</th><th>Peak acceleration</th><th>Feedforward tilt</th></tr></thead>
+  <tbody>
+    <tr><td>Circle</td><td class="n">8 s</td><td class="n">0.037 m/s&sup2;</td><td class="n">0.53&deg;</td></tr>
+    <tr><td>Figure 8</td><td class="n">12 s</td><td class="n">0.035 m/s&sup2;</td><td class="n">0.50&deg;</td></tr>
+    <tr><td>Star</td><td class="n">15 s</td><td class="n">0.073 m/s&sup2;</td><td class="n">1.05&deg;</td></tr>
+    <tr><td>Square</td><td class="n">12 s</td><td class="n">0.054 m/s&sup2;</td><td class="n">0.78&deg;</td></tr>
+    <tr><td>Triangle</td><td class="n">10 s</td><td class="n">0.054 m/s&sup2;</td><td class="n">0.77&deg;</td></tr>
+  </tbody>
+</table>
+</div>
+<p>The tilt limit is not the only limit. The 0.2&nbsp;s dead time and the error in <i class="v">K</i> both matter more as the lap gets faster, so the defaults sit well inside the tilt budget.</p>
+
+<h2><span class="num">6</span>Why PID alone lags behind</h2>
+<p>The balancing controller computes tilt from the error only:</p>
+<div class="eq">
+  <i>&theta;</i> = <i>k</i><sub>p</sub> <i>e</i> + <i>k</i><sub>i</sub> &int;<i>e</i> d<i>t</i> + <i>k</i><sub>d</sub> <i>e&#775;</i>,&nbsp;&nbsp;&nbsp; <i>e</i> = ref &minus; ball
+</div>
+<p>To follow a circle the plate must be tilted about half a degree at all times. A feedback-only controller can only produce tilt when there is error, so it has to <b>keep</b> an error to keep the tilt. At <i class="v">k</i><sub>p</sub> = 20&deg; per metre, half a degree costs roughly 25&nbsp;mm of error, and the dead time makes it worse. The ball traces a shrunken, rotated copy of the shape.</p>
+<p>Raising the gains would shrink that error, but the dead time caps the usable gain. That is the instability <code>CHANGES.md</code> describes.</p>
+
+<h2><span class="num">7</span>Feedforward: use what the plan already knows</h2>
+<p>The reference is known in advance, so its acceleration is known in advance. Invert the model from section 2 to get the tilt that produces it:</p>
+<div class="eq">
+  <i>&theta;</i><sub>ff</sub>(<i>t</i>) = <i>r&#776;</i>(<i>t</i> + <i>&tau;</i>) / <i>K</i>
+  <small><i>r</i> is the reference position. Evaluating it <i>&tau;</i> = 0.2 s ahead means the tilt takes effect when the reference needs it, which cancels most of the dead time.</small>
+</div>
+<p>The total command is feedforward plus feedback:</p>
+<div class="eq">
+  <i>&theta;</i> = <i>&theta;</i><sub>ff</sub> + PID(<i>r</i> &minus; <i>x</i>)
+</div>
+<p>This arrangement is called <b>two-degree-of-freedom control</b>. Each part has its own job:</p>
+<ul>
+  <li><b>Feedforward</b> supplies the tilt the shape needs. It acts with no error and no delay, but it is only as good as the model.</li>
+  <li><b>Feedback</b> corrects what the model gets wrong: the error in <i class="v">K</i>, the plate being off level (the integral term), an uneven ball, a nudge from outside.</li>
+</ul>
+<p>If the model were perfect, the error would stay at zero and the PID would do nothing. With <i class="v">K</i> wrong by 10%, about 10% of the feedback-only error is left.</p>
+<p>This is also why sections 3 to 5 insist on smoothness. Feedforward uses the second derivative of the reference. A corner taken at speed has an infinite second derivative, which is a tilt the plate cannot produce.</p>
+<div class="note">
+  <b>The formal name.</b> A system is <i>differentially flat</i> when every input can be computed from a chosen output and its derivatives. Here the ball position is that output: given a twice-differentiable reference, the tilt follows from one division. Robot arms and quadrotors are planned the same way, with more derivatives.
+</div>
+
+<h2><span class="num">8</span>Try it</h2>
+<p>This is the same planner and controller as <code>trajectory_demo.py</code>, running against the simple model from section 2 with the plate slightly off level. Turn feedforward off and watch the ball fall behind.</p>
+
+<div class="card">
+  <canvas id="plate" height="420" aria-label="Simulated plate showing the planned shape, the moving reference and the ball"></canvas>
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>Planned path</span>
+    <span><i style="background:var(--ref)"></i>Reference</span>
+    <span><i style="background:var(--ball)"></i>Ball</span>
+    <span><i style="background:var(--trail)"></i>Ball trail</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><span>Phase</span><b id="sPhase">-</b></div>
+    <div class="stat"><span>Error now</span><b id="sErr">-</b></div>
+    <div class="stat"><span>RMS, last lap</span><b id="sRms">-</b></div>
+    <div class="stat" id="sPeakBox"><span>Peak feedforward</span><b id="sPeak">-</b></div>
+  </div>
+
+  <div class="toggles">
+    <label><input type="checkbox" id="cFf" checked> Feedforward</label>
+    <label><input type="checkbox" id="cLook" checked> Look ahead by the dead time</label>
+    <button id="bRestart" type="button">Restart</button>
+  </div>
+
+  <div class="controls">
+    <label>Shape
+      <select id="cShape">
+        <option value="circle">Circle</option>
+        <option value="figure8">Figure 8</option>
+        <option value="star">Star</option>
+        <option value="square">Square</option>
+        <option value="triangle">Triangle</option>
+      </select>
+    </label>
+    <label>Lap time: <output id="oPeriod"></output>
+      <input type="range" id="cPeriod" min="3" max="30" step="0.5" value="8">
+    </label>
+    <label>Size: <output id="oSize"></output>
+      <input type="range" id="cSize" min="20" max="100" step="5" value="60">
+    </label>
+    <label>Error in assumed K: <output id="oMis"></output>
+      <input type="range" id="cMis" min="-40" max="40" step="5" value="-10">
+    </label>
+  </div>
+
+  <canvas id="chart" height="170" aria-label="Tracking error over the last 40 seconds" style="margin-top:14px"></canvas>
+  <p class="caption">Tracking error over the last 40 seconds. Shaded bands are times with feedforward off.</p>
+</div>
+
+<h3>Things to try</h3>
+<ol>
+  <li><b>Feedforward off.</b> The error jumps by roughly ten times and the ball's trail becomes a smaller, rotated copy of the shape.</li>
+  <li><b>Look-ahead off.</b> Feedforward still helps, but the ball runs about 0.2&nbsp;s late.</li>
+  <li><b>Lap time down to 4 s.</b> The peak feedforward tilt grows with 1/<i class="v">T</i>&sup2; and the error grows with it. Below the feasible limit the readout turns red.</li>
+  <li><b>Error in K to 0%.</b> With a perfect model the remaining error is small. At &plusmn;40% feedforward still beats feedback alone.</li>
+  <li><b>Star against circle.</b> The star stops at each point, where the error is smallest. The error peaks mid-segment, where acceleration is highest.</li>
+</ol>
+
+<h2><span class="num">9</span>Running it on the platform</h2>
+<pre><code>python trajectory_demo.py --sim                   # simulated ball, no hardware
+python trajectory_demo.py                         # camera only, no servo commands
+python trajectory_demo.py --live --log            # real platform, circle
+python trajectory_demo.py --live --shape star --size 0.06 --period 15</code></pre>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><kbd>SPACE</kbd></td><td>Start or pause. On start the ball glides to the shape, settles, then laps.</td></tr>
+    <tr><td><kbd>1</kbd> to <kbd>5</kbd></td><td>Circle, figure 8, star, square, triangle. Works mid-run.</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Feedforward on or off. The RMS error on screen shows the difference within a lap.</td></tr>
+    <tr><td><kbd>R</kbd></td><td>Return the plate to neutral.</td></tr>
+    <tr><td><kbd>Q</kbd></td><td>Quit. Prints the RMS error with feedforward on and off.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Live mode asks for <code>ARM</code> and <code>HOME</code> first, exactly as <code>pid_controller.py</code> does.</p>
+
+<h3>Tuning on the real plate</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>What you see</th><th>What to change</th></tr></thead>
+  <tbody>
+    <tr><td>Ball traces the shape too small, lagging behind</td><td>Feedforward is too weak: lower <code>--plant-gain</code> (try 0.06).</td></tr>
+    <tr><td>Ball swings wide of the shape</td><td>Feedforward is too strong: raise <code>--plant-gain</code> (try 0.08).</td></tr>
+    <tr><td>Right size but rotated late</td><td>Raise <code>--delay</code> (try 0.25).</td></tr>
+    <tr><td>Whole shape shifted to one side</td><td>Plate not level: use the <code>--trim-roll</code> and <code>--trim-pitch</code> values from <code>pid_controller.py</code>.</td></tr>
+    <tr><td>Ball wobbles or leaves the plate</td><td>Slow down with a larger <code>--period</code>, or use a smaller <code>--size</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Run <code>python analyze_log.py</code> on a recent balancing log to re-measure the gain and the dead time, then pass them as <code>--plant-gain</code> and <code>--delay</code>.</p>
+
+<div class="note">
+  <b>What has been tested.</b> The demo has been run against the simulated ball only, where it tracks every shape to about 3 to 5&nbsp;mm RMS. It has not been run on the real platform. The real ball's uneven weight will add error at the points of the star, squares and triangles, where the ball stops; the circle and figure 8 keep it rolling and should suffer least.
+</div>
+
+</main>
+
+<script>
+/* ---------- Planner and controller (same maths as trajectory_demo.py) ---------- */
+
+const K_ASSUMED = 0.070;   // m/s^2 per degree
+const DEAD_TIME = 0.20;    // s
+const DT = 1 / 30;         // control step, s
+const MAX_TILT = 5.0;      // deg
+const FF_SHARE = 0.6;
+const PLATE_R = 0.15;      // m
+
+function minJerk(u) {
+  u = Math.min(1, Math.max(0, u));
+  return u * u * u * (10 - 15 * u + 6 * u * u);
+}
+
+function polygon(count, step, radius, startDeg) {
+  const points = [];
+  for (let k = 0; k < count; k++) {
+    const a = (startDeg + 360 * step * k / count) * Math.PI / 180;
+    points.push([radius * Math.cos(a), radius * Math.sin(a)]);
+  }
+  return points;
+}
+
+function makeTrajectory(shape, size, period) {
+  const vertices =
+    shape === 'star' ? polygon(5, 2, size, 90) :
+    shape === 'square' ? polygon(4, 1, size, 45) :
+    shape === 'triangle' ? polygon(3, 1, size, 90) : null;
+
+  const trajectory = {
+    shape, size, period,
+    position(t) {
+      t = ((t % period) + period) % period;
+      if (vertices) {
+        const n = vertices.length;
+        const progress = t / (period / n);
+        const i = Math.floor(progress) % n;
+        const s = minJerk(progress - Math.floor(progress));
+        const a = vertices[i], b = vertices[(i + 1) % n];
+        return [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
+      }
+      const angle = 2 * Math.PI * t / period;
+      return shape === 'circle'
+        ? [size * Math.cos(angle), size * Math.sin(angle)]
+        : [size * Math.sin(angle), size * Math.sin(angle) * Math.cos(angle)];
+    },
+    peakAcceleration() {
+      const samples = 1500, h = period / samples;
+      let peak = 0;
+      for (let k = 0; k < samples; k++) {
+        const p0 = this.position(k * h - h), p1 = this.position(k * h), p2 = this.position(k * h + h);
+        peak = Math.max(peak, Math.hypot(p0[0] - 2 * p1[0] + p2[0], p0[1] - 2 * p1[1] + p2[1]) / (h * h));
+      }
+      return peak;
+    }
+  };
+  return trajectory;
+}
+
+function makePlan(trajectory, startXY, startTime) {
+  const APPROACH = 3.0, SETTLE = 1.5, RAMP = 2.0;
+  const entry = trajectory.position(0);
+  const plan = {
+    lapTime(t) {
+      const tau = t - startTime - APPROACH - SETTLE;
+      if (tau <= 0) return 0;
+      if (tau < RAMP) { const u = tau / RAMP; return RAMP * (u ** 3 - 0.5 * u ** 4); }
+      return tau - 0.5 * RAMP;
+    },
+    phase(t) {
+      const tau = t - startTime;
+      return tau < APPROACH ? 'Approach' : tau < APPROACH + SETTLE ? 'Settle' : 'Tracking';
+    },
+    position(t) {
+      const tau = t - startTime;
+      if (tau < APPROACH) {
+        const s = minJerk(tau / APPROACH);
+        return [startXY[0] + (entry[0] - startXY[0]) * s, startXY[1] + (entry[1] - startXY[1]) * s];
+      }
+      return trajectory.position(this.lapTime(t));
+    },
+    acceleration(t) {
+      const h = 0.02;
+      const p0 = this.position(t - h), p1 = this.position(t), p2 = this.position(t + h);
+      return [(p0[0] - 2 * p1[0] + p2[0]) / (h * h), (p0[1] - 2 * p1[1] + p2[1]) / (h * h)];
+    }
+  };
+  return plan;
+}
+
+function makePid() {
+  const kp = 20, ki = 8, kd = 25, tau = 0.08, iLimit = 2.5;
+  let integral = 0, previous = null, filtered = 0;
+  return {
+    update(error, integrate) {
+      const raw = previous === null ? 0 : (error - previous) / DT;
+      previous = error;
+      filtered += (DT / (tau + DT)) * (raw - filtered);
+      if (integrate) {
+        integral += error * DT;
+        integral = Math.max(-iLimit / ki, Math.min(iLimit / ki, integral));
+      }
+      return kp * error + ki * integral + kd * filtered;
+    }
+  };
+}
+
+function makeSimulation(settings) {
+  const trajectory = makeTrajectory(settings.shape, settings.size, settings.period);
+  const sim = {
+    trajectory,
+    t: 0,
+    x: 0.045, y: -0.03, vx: 0, vy: 0,
+    ref: [0.045, -0.03],
+    error: 0, ffTilt: 0, saturated: false,
+    pidX: makePid(), pidY: makePid(),
+    queue: [],
+    plan: null,
+    peakTilt: trajectory.peakAcceleration() / K_ASSUMED,
+    step(feedforward, lookAhead, mismatch) {
+      const plan = this.plan;
+      this.ref = plan.position(this.t);
+      let ffX = 0, ffY = 0;
+      if (feedforward) {
+        const acc = plan.acceleration(this.t + (lookAhead ? DEAD_TIME : 0));
+        ffX = acc[0] / K_ASSUMED; ffY = acc[1] / K_ASSUMED;
+      }
+      this.ffTilt = Math.hypot(ffX, ffY);
+      const measuredX = this.x + (Math.random() - 0.5) * 0.0006;
+      const measuredY = this.y + (Math.random() - 0.5) * 0.0006;
+      let ux = this.pidX.update(this.ref[0] - measuredX, !this.saturated) + ffX;
+      let uy = this.pidY.update(this.ref[1] - measuredY, !this.saturated) + ffY;
+      const size = Math.hypot(ux, uy);
+      this.saturated = size > MAX_TILT;
+      if (this.saturated) { ux *= MAX_TILT / size; uy *= MAX_TILT / size; }
+
+      // Plant: dead time, then double integrator with a small level error
+      this.queue.push([ux, uy]);
+      const delayed = this.queue.length > Math.round(DEAD_TIME / DT) ? this.queue.shift() : [0, 0];
+      const gain = K_ASSUMED * (1 + mismatch);
+      this.vx += (gain * delayed[0] + 0.02) * DT;
+      this.vy += (gain * delayed[1] - 0.015) * DT;
+      this.x += this.vx * DT;
+      this.y += this.vy * DT;
+      const r = Math.hypot(this.x, this.y), rim = PLATE_R - 0.02;
+      if (r > rim) { this.x *= rim / r; this.y *= rim / r; this.vx = 0; this.vy = 0; }
+
+      this.error = Math.hypot(this.ref[0] - this.x, this.ref[1] - this.y);
+      this.t += DT;
+    }
+  };
+  sim.plan = makePlan(trajectory, [sim.x, sim.y], 0);
+  return sim;
+}
+
+/* ---------- Page ---------- */
+
+if (typeof document !== 'undefined') {
+
+const $ = id => document.getElementById(id);
+const DEFAULT_PERIOD = { circle: 8, figure8: 12, star: 15, square: 12, triangle: 10 };
+
+let colours = {};
+function readColours() {
+  const style = getComputedStyle(document.documentElement);
+  for (const name of ['bg', 'surface', 'ink', 'muted', 'line', 'accent', 'accent-soft', 'ref', 'ball', 'trail', 'warn', 'plate']) {
+    colours[name] = style.getPropertyValue('--' + name).trim();
+  }
+}
+readColours();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColours(); drawScalingPlot(); });
+
+/* Time-scaling figure */
+function drawScalingPlot() {
+  const svg = $('scalingPlot');
+  const panels = [
+    { title: 'Position  s', f: u => minJerk(u), g: u => u, lo: 0, hi: 1 },
+    { title: 'Speed', f: u => 30 * u * u * (1 - u) * (1 - u), g: () => 1, lo: 0, hi: 2 },
+    { title: 'Acceleration', f: u => 60 * u - 180 * u * u + 120 * u * u * u, g: () => 0, lo: -6.5, hi: 6.5, spikes: true }
+  ];
+  const w = 210, h = 150, top = 40, gap = 30;
+  let out = '';
+  panels.forEach((panel, index) => {
+    const left = 15 + index * (w + gap);
+    const px = u => left + u * w;
+    const py = v => top + h - (v - panel.lo) / (panel.hi - panel.lo) * h;
+    const line = fn => {
+      let d = '';
+      for (let k = 0; k <= 60; k++) d += (k ? 'L' : 'M') + px(k / 60).toFixed(1) + ' ' + py(fn(k / 60)).toFixed(1);
+      return d;
+    };
+    out += `<text x="${left}" y="24" fill="${colours.ink}" font-size="14" font-weight="600">${panel.title}</text>`;
+    out += `<rect x="${left}" y="${top}" width="${w}" height="${h}" fill="none" stroke="${colours.line}"/>`;
+    out += `<line x1="${left}" x2="${left + w}" y1="${py(0)}" y2="${py(0)}" stroke="${colours.line}"/>`;
+    out += `<path d="${line(panel.g)}" fill="none" stroke="${colours.muted}" stroke-width="2" stroke-dasharray="5 4"/>`;
+    if (panel.spikes) {
+      out += `<path d="M${px(0) + 2} ${py(0)}V${top + 6}m-5 8l5-8l5 8" fill="none" stroke="${colours.muted}" stroke-width="2"/>`;
+      out += `<path d="M${px(1) - 2} ${py(0)}V${top + h - 6}m-5-8l5 8l5-8" fill="none" stroke="${colours.muted}" stroke-width="2"/>`;
+    }
+    out += `<path d="${line(panel.f)}" fill="none" stroke="${colours.accent}" stroke-width="2.5"/>`;
+    out += `<text x="${left}" y="${top + h + 18}" fill="${colours.muted}" font-size="12">start</text>`;
+    out += `<text x="${left + w}" y="${top + h + 18}" fill="${colours.muted}" font-size="12" text-anchor="end">end</text>`;
+  });
+  svg.innerHTML = out;
+}
+drawScalingPlot();
+
+/* Simulator */
+const plate = $('plate'), chart = $('chart');
+let sim, trail = [], history = [], lapErrors = [];
+
+function settings() {
+  return { shape: $('cShape').value, size: +$('cSize').value / 1000, period: +$('cPeriod').value };
+}
+
+function restart() {
+  sim = makeSimulation(settings());
+  trail = []; lapErrors = [];
+  $('oPeriod').textContent = (+$('cPeriod').value).toFixed(1) + ' s';
+  $('oSize').textContent = $('cSize').value + ' mm';
+  $('oMis').textContent = ($('cMis').value > 0 ? '+' : '') + $('cMis').value + '%';
+  const feasible = sim.peakTilt <= FF_SHARE * MAX_TILT;
+  $('sPeak').textContent = sim.peakTilt.toFixed(2) + '°' + (feasible ? '' : ' too fast');
+  $('sPeakBox').classList.toggle('bad', !feasible);
+}
+
+$('cShape').addEventListener('change', () => { $('cPeriod').value = DEFAULT_PERIOD[$('cShape').value]; restart(); });
+for (const id of ['cPeriod', 'cSize']) $(id).addEventListener('input', restart);
+$('cMis').addEventListener('input', () => { $('oMis').textContent = ($('cMis').value > 0 ? '+' : '') + $('cMis').value + '%'; });
+$('bRestart').addEventListener('click', restart);
+
+function fit(canvas) {
+  const ratio = window.devicePixelRatio || 1;
+  const width = canvas.clientWidth, height = +canvas.getAttribute('height');
+  if (canvas.width !== Math.round(width * ratio)) {
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    canvas.style.height = height + 'px';
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  return [ctx, width, height];
+}
+
+function drawPlate() {
+  const [ctx, width, height] = fit(plate);
+  ctx.clearRect(0, 0, width, height);
+  const scale = (Math.min(width, height) / 2 - 8) / PLATE_R;
+  const cx = width / 2, cy = height / 2;
+  const X = x => cx + x * scale, Y = y => cy - y * scale;
+
+  ctx.fillStyle = colours.plate;
+  ctx.beginPath(); ctx.arc(cx, cy, PLATE_R * scale, 0, 2 * Math.PI); ctx.fill();
+
+  ctx.strokeStyle = colours.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(X(-PLATE_R), cy); ctx.lineTo(X(PLATE_R), cy);
+  ctx.moveTo(cx, Y(-PLATE_R)); ctx.lineTo(cx, Y(PLATE_R)); ctx.stroke();
+
+  ctx.strokeStyle = colours.accent; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let k = 0; k <= 300; k++) {
+    const p = sim.trajectory.position(sim.trajectory.period * k / 300);
+    k ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]));
+  }
+  ctx.stroke();
+
+  if (trail.length > 1) {
+    ctx.strokeStyle = colours.trail; ctx.lineWidth = 2;
+    ctx.beginPath();
+    trail.forEach((p, k) => k ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = colours.ball;
+  ctx.beginPath(); ctx.arc(X(sim.x), Y(sim.y), 0.02 * scale, 0, 2 * Math.PI); ctx.fill();
+
+  ctx.strokeStyle = colours.ref; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(X(sim.x), Y(sim.y)); ctx.lineTo(X(sim.ref[0]), Y(sim.ref[1])); ctx.stroke();
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(X(sim.ref[0]), Y(sim.ref[1]), 7, 0, 2 * Math.PI); ctx.stroke();
+  ctx.fillStyle = colours.ref;
+  ctx.beginPath(); ctx.arc(X(sim.ref[0]), Y(sim.ref[1]), 2.5, 0, 2 * Math.PI); ctx.fill();
+}
+
+function drawChart() {
+  const [ctx, width, height] = fit(chart);
+  ctx.clearRect(0, 0, width, height);
+  const left = 44, right = width - 8, top = 8, bottom = height - 22;
+  const span = 40;
+  const peak = Math.max(20, ...history.map(p => p.e * 1000));
+  const top_mm = Math.ceil(peak / 20) * 20;
+  const now = sim.t;
+  const X = t => right - (now - t) / span * (right - left);
+  const Y = mm => bottom - mm / top_mm * (bottom - top);
+
+  ctx.fillStyle = colours['accent-soft'];
+  let bandStart = null;
+  history.forEach((p, k) => {
+    if (!p.ff && bandStart === null) bandStart = p.t;
+    if ((p.ff || k === history.length - 1) && bandStart !== null) {
+      ctx.fillRect(X(bandStart), top, X(p.t) - X(bandStart), bottom - top);
+      bandStart = null;
+    }
+  });
+
+  ctx.font = '12px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = colours.muted; ctx.strokeStyle = colours.line; ctx.lineWidth = 1;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const mm of [0, top_mm / 2, top_mm]) {
+    ctx.beginPath(); ctx.moveTo(left, Y(mm)); ctx.lineTo(right, Y(mm)); ctx.stroke();
+    ctx.fillText(mm + ' mm', left - 6, Y(mm));
+  }
+  ctx.textBaseline = 'top'; ctx.textAlign = 'right';
+  ctx.fillText('now', right, bottom + 5);
+  ctx.textAlign = 'left';
+  ctx.fillText(span + ' s ago', left, bottom + 5);
+
+  if (history.length > 1) {
+    ctx.strokeStyle = colours.accent; ctx.lineWidth = 2;
+    ctx.beginPath();
+    history.forEach((p, k) => k ? ctx.lineTo(X(p.t), Y(p.e * 1000)) : ctx.moveTo(X(p.t), Y(p.e * 1000)));
+    ctx.stroke();
+  }
+}
+
+let lastFrame = null, owed = 0;
+function frame(timestamp) {
+  if (lastFrame !== null) owed += Math.min(0.1, (timestamp - lastFrame) / 1000);
+  lastFrame = timestamp;
+
+  const feedforward = $('cFf').checked, lookAhead = $('cLook').checked, mismatch = +$('cMis').value / 100;
+
+  while (owed >= DT) {
+    owed -= DT;
+    sim.step(feedforward, lookAhead, mismatch);
+    const tracking = sim.plan.phase(sim.t) === 'Tracking';
+    trail.push([sim.x, sim.y]);
+    if (trail.length > sim.trajectory.period / DT) trail.shift();
+    history.push({ t: sim.t, e: sim.error, ff: feedforward });
+    if (tracking) lapErrors.push(sim.error * sim.error);
+    if (lapErrors.length > sim.trajectory.period / DT) lapErrors.shift();
+  }
+  while (history.length && (history[0].t < sim.t - 40 || history[0].t > sim.t)) history.shift();
+
+  $('sPhase').textContent = sim.plan.phase(sim.t);
+  $('sErr').textContent = (sim.error * 1000).toFixed(1) + ' mm';
+  $('sRms').textContent = lapErrors.length
+    ? (Math.sqrt(lapErrors.reduce((a, b) => a + b, 0) / lapErrors.length) * 1000).toFixed(1) + ' mm'
+    : '-';
+
+  drawPlate();
+  drawChart();
+  requestAnimationFrame(frame);
+}
+
+restart();
+requestAnimationFrame(frame);
+
+}
+
+if (typeof module !== 'undefined') module.exports = { makeSimulation, DT };
+</script>
+</body>
+</html>
