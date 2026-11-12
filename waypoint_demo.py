@@ -384,11 +384,8 @@ class WaypointController:
 
                     ratio = max(0.6, min(1.6, move["top_speed"] / move["peak"]))
 
-                    # Kept within a narrow band: one odd push (ball held
-                    # back by a slope, or already rolling) must not
-                    # stretch the next pushes into a launch.
                     self.model_scale = max(
-                        0.8, min(1.3, self.model_scale * math.sqrt(ratio))
+                        0.5, min(1.6, self.model_scale * math.sqrt(ratio))
                     )
 
             if move["phase"] == "COAST":
@@ -458,28 +455,12 @@ class WaypointController:
 
             return self.go_tilt * aim_x, self.go_tilt * aim_y, "ACCELERATE"
 
-        # Rolling toward the waypoint. Plain position feedback lets the
-        # ball build up speed over a long distance and then cannot stop
-        # it. Instead, choose a speed that is safe for the distance left
-        # and steer the ball's velocity to it.
-        px, py, pvx, pvy = self.predict(t, x, y)
-
-        left_x, left_y = target_x - px, target_y - py
-        left = max(1e-6, math.hypot(left_x, left_y))
-
-        # Never faster than the ball can stop from (v = sqrt(2 a d)),
-        # never faster than the cruise speed, and slowing in proportion
-        # to the distance on the final approach.
-        wanted = min(
-            args.cruise_speed,
-            args.approach_gain * left,
-            math.sqrt(2.0 * args.brake_accel * left),
+        # Still rolling: slow it down until it stops
+        return (
+            args.kp * (target_x - x) - args.kd * self.vx,
+            args.kp * (target_y - y) - args.kd * self.vy,
+            "CATCH",
         )
-
-        push_x = args.speed_gain * (wanted * left_x / left - pvx) / gain
-        push_y = args.speed_gain * (wanted * left_y / left - pvy) / gain
-
-        return push_x, push_y, "APPROACH"
 
     def pid_push(self, x, y, dt):
 
@@ -566,16 +547,6 @@ class WaypointController:
         else:
             push_x, push_y, label = self.pid_push(x, y, dt)
 
-        # Edge guard: near the rim, add a push back toward the centre
-        radius = math.hypot(x, y)
-
-        if radius > args.edge_radius:
-
-            inward = args.edge_gain * (radius - args.edge_radius)
-
-            push_x -= inward * x / radius
-            push_y -= inward * y / radius
-
         self.history.append((t, push_x, push_y))
 
         # +pitch accelerates the ball toward +x, +roll toward -y
@@ -652,10 +623,9 @@ class SimulatedBall:
     def __init__(self, uneven, plate_radius, delay=0.25):
 
         self.uneven = uneven
-        self.gain = 0.07 if uneven else IDEAL_GAIN
+        self.gain = 0.092 if uneven else IDEAL_GAIN
         self.delay = delay if uneven else 0.0
-        self.level = (0.3, 1.0) if uneven else (0.0, 0.0)
-        self.stick_range = (0.6, 1.6)
+        self.level = (0.5, -0.4) if uneven else (0.0, 0.0)
         self.noise = 0.0003 if uneven else 0.0
         self.wobble_deg = 0.5 if uneven else 0.0
 
@@ -667,7 +637,7 @@ class SimulatedBall:
 
         self.random = random.Random(7)
         self.stuck = uneven
-        self.threshold = 1.2
+        self.threshold = 1.8
 
         # Direction of the heavy point (unit vector), starting at the bottom
         self.heavy = np.array([0.0, 0.0, -1.0])
@@ -737,7 +707,7 @@ class SimulatedBall:
                 self.stuck = True
                 self.vx = 0.0
                 self.vy = 0.0
-                self.threshold = self.random.uniform(*self.stick_range)
+                self.threshold = self.random.uniform(1.3, 2.4)
 
         distance = math.hypot(self.x, self.y)
         rim = self.plate_radius - self.radius
@@ -806,12 +776,6 @@ def make_report(args, solver):
 
     folder = ROOT / "waypoint_report"
     folder.mkdir(exist_ok=True)
-
-    # Overshoot past a waypoint can only be measured if the ball has to
-    # come to rest there, so the report does not use touch-and-go.
-    if args.dwell <= 0.0:
-        args.dwell = 0.25
-        args.tolerance = max(args.tolerance, 0.02)
 
     waypoints = waypoints_for(args.shape, args.size)
     outline = np.array([(0.0, 0.0)] + waypoints) * 1000
@@ -957,33 +921,20 @@ def parse_args(argv=None):
                         help="start with plain PID position control (P toggles)")
 
     # The write-up's model
-    parser.add_argument("--plant-gain", type=float, default=0.075,
-                        help="ball acceleration in m/s^2 per deg of tilt. "
-                             "The ideal value is 0.10273 (3/5 g); the logs "
-                             "from this platform give about 0.075 (default)")
+    parser.add_argument("--plant-gain", type=float, default=round(IDEAL_GAIN, 5),
+                        help="ball acceleration in m/s^2 per deg of tilt "
+                             "(default 0.10273 = 3/5 g)")
     parser.add_argument("--brake-accel", type=float, default=0.12,
                         help="planned braking deceleration in m/s^2; keep it "
                              "under plant gain x sticking tilt (default 0.12)")
-    parser.add_argument("--cruise-speed", type=float, default=0.07,
-                        help="top speed between waypoints in m/s (default 0.07)")
-    parser.add_argument("--delay", type=float, default=0.30,
-                        help="loop dead time in s (default 0.30)")
-    parser.add_argument("--speed-gain", type=float, default=1.3,
-                        help="how hard a rolling ball is steered to the wanted "
-                             "speed, 1/s; lower = calmer (default 1.3)")
-    parser.add_argument("--approach-gain", type=float, default=0.8,
-                        help="wanted speed per metre left on the final "
-                             "approach, 1/s; lower = slower arrival (default 0.8)")
-    parser.add_argument("--edge-radius", type=float, default=0.10,
-                        help="beyond this distance from the centre the ball is "
-                             "pushed back, m (default 0.10)")
-    parser.add_argument("--edge-gain", type=float, default=60.0,
-                        help="edge push in deg per m past the edge radius "
-                             "(default 60)")
+    parser.add_argument("--cruise-speed", type=float, default=0.08,
+                        help="top speed between waypoints in m/s (default 0.08)")
+    parser.add_argument("--delay", type=float, default=0.25,
+                        help="loop dead time in s (default 0.25)")
 
     # Uneven ball
-    parser.add_argument("--tolerance", type=float, default=0.013,
-                        help="radius of the target circle in m (default 0.013)")
+    parser.add_argument("--tolerance", type=float, default=0.025,
+                        help="radius of the target circle in m (default 0.025)")
     parser.add_argument("--go-tilt", type=float, default=3.0,
                         help="tilt used to start a stationary ball, deg; must "
                              "be above the tilt it sticks at (default 3)")
@@ -994,10 +945,10 @@ def parse_args(argv=None):
                         action="store_false",
                         help="do not estimate the plate's level error")
 
-    parser.add_argument("--dwell", type=float, default=0.0,
+    parser.add_argument("--dwell", type=float, default=0.25,
                         help="seconds the ball must rest inside the circle; "
                              "0 = move on the moment its centre enters "
-                             "(default 0)")
+                             "(default 0.25)")
     parser.add_argument("--leg-timeout", type=float, default=12.0)
 
     # Same PID and limits as pid_controller.py (used when the planner is off)
@@ -1028,10 +979,6 @@ def parse_args(argv=None):
         (0.02 <= args.brake_accel <= 0.4, "Brake accel must be 0.02 to 0.4 m/s^2"),
         (0.02 <= args.cruise_speed <= 0.3, "Cruise speed must be 0.02 to 0.3 m/s"),
         (0.0 <= args.delay <= 1.0, "Delay must be between 0 and 1 s"),
-        (0.3 <= args.speed_gain <= 5.0, "Speed gain must be 0.3 to 5"),
-        (0.2 <= args.approach_gain <= 4.0, "Approach gain must be 0.2 to 4"),
-        (0.05 <= args.edge_radius <= 0.14, "Edge radius must be 0.05 to 0.14 m"),
-        (0.0 <= args.edge_gain <= 200.0, "Edge gain must be 0 to 200"),
         (0.005 <= args.tolerance <= 0.05, "Tolerance must be 0.005 to 0.05 m"),
         (0.5 <= args.go_tilt <= 0.9 * args.max_tilt,
          "Go tilt must be between 0.5 deg and 90% of the maximum tilt"),
