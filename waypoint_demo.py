@@ -68,6 +68,7 @@ from ball_detection import BallDetector
 from kinematics import KinematicsError, StewartKinematics
 from pid_controller import (
     PID,
+    GainSliders,
     SERIAL_DECIMALS,
     limit_vector,
     overlay_text,
@@ -945,16 +946,16 @@ def parse_args(argv=None):
                         action="store_false",
                         help="do not estimate the plate's level error")
 
-    parser.add_argument("--dwell", type=float, default=0.25,
+    parser.add_argument("--dwell", type=float, default=0.0,
                         help="seconds the ball must rest inside the circle; "
                              "0 = move on the moment its centre enters "
                              "(default 0.25)")
-    parser.add_argument("--leg-timeout", type=float, default=12.0)
+    parser.add_argument("--leg-timeout", type=float, default=30.0)
 
     # Same PID and limits as pid_controller.py (used when the planner is off)
-    parser.add_argument("--kp", type=float, default=20.0)
-    parser.add_argument("--ki", type=float, default=8.0)
-    parser.add_argument("--kd", type=float, default=25.0)
+    parser.add_argument("--kp", type=float, default=30.0)
+    parser.add_argument("--ki", type=float, default=2.0)
+    parser.add_argument("--kd", type=float, default=10.0)
     parser.add_argument("--d-filter", type=float, default=0.08)
     parser.add_argument("--i-limit", type=float, default=2.5)
     parser.add_argument("--max-tilt", type=float, default=5.0)
@@ -1126,6 +1127,7 @@ def main():
                 "elapsed_s", "planner", "phase", "target_x_m", "target_y_m",
                 "ball_x_m", "ball_y_m", "speed_m_s", "distance_mm",
                 "roll_deg", "pitch_deg", "level_x_deg", "level_y_deg", "dt_s",
+                "kp", "ki", "kd",
             ])
 
             print("Logging to:", log_path)
@@ -1138,6 +1140,10 @@ def main():
 
             if ser is None:
                 return
+
+        # Kp / Ki / Kd sliders. The planner reads its gains from args and
+        # the PID-only mode from the two PID objects, so drive all three.
+        sliders = GainSliders([args, controller.pid_x, controller.pid_y])
 
         started = time.monotonic()
         previous = started
@@ -1231,6 +1237,9 @@ def main():
                             round(controller.level_x, 3),
                             round(controller.level_y, 3),
                             round(dt, 4),
+                            args.kp,
+                            args.ki,
+                            args.kd,
                         ])
 
             # ----- Arduino replies -----
@@ -1313,11 +1322,17 @@ def main():
                 + (f"   Loop {1.0 / loop_dt:4.1f} Hz" if loop_dt > 0 else "")
             )
 
+            lines.append(
+                f"Kp={args.kp:g} Ki={args.ki:g} Kd={args.kd:g} (sliders)"
+            )
+
             lines.append("SPACE start/pause  1-4 shape  R neutral  Q quit")
 
             overlay_text(display, lines)
 
             cv2.imshow(WINDOW, display)
+
+            sliders.update()
 
             key = cv2.waitKey(30 if simulated is not None else 1) & 0xFF
 
@@ -1424,6 +1439,10 @@ def main():
 
         for line in summarise(controller.results):
             print(line)
+
+        print(
+            f"Gains at exit: --kp {args.kp:g} --ki {args.ki:g} --kd {args.kd:g}"
+        )
 
         if abs(controller.level_x) > 0.2 or abs(controller.level_y) > 0.2:
 

@@ -50,6 +50,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from ball_detection import BallDetector
 from kinematics import KinematicsError, StewartKinematics
@@ -138,6 +139,120 @@ class PID:
             + self.ki * self.integral
             + self.kd * self.filtered_derivative
         )
+
+
+# ==================================================
+# LIVE GAIN SLIDERS
+# ==================================================
+
+class GainSliders:
+    """A small window with Kp, Ki and Kd sliders. Dragging a slider
+    changes the gain of every PID given to it straight away."""
+
+    WINDOW = "PID Gains"
+
+    # (label, attribute, largest value). Sliders move in steps of 0.5.
+    SLIDERS = (
+        ("Kp x2", "kp", 80.0),
+        ("Ki x2", "ki", 40.0),
+        ("Kd x2", "kd", 80.0),
+    )
+
+    def __init__(self, pids):
+
+        # Anything with kp / ki / kd attributes can be driven
+        self.pids = list(pids)
+        self.open = True
+        self.positions = {}
+
+        cv2.namedWindow(self.WINDOW, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(self.WINDOW, 460, 170)
+
+        for label, name, largest in self.SLIDERS:
+
+            value = max(0.0, getattr(self.pids[0], name))
+
+            self.positions[name] = int(round(value * 2))
+
+            cv2.createTrackbar(
+                label,
+                self.WINDOW,
+                self.positions[name],
+                int(max(largest, value) * 2),
+                lambda _: None
+            )
+
+        self.update()
+
+    @property
+    def gains(self):
+
+        pid = self.pids[0]
+
+        return pid.kp, pid.ki, pid.kd
+
+    def update(self):
+        """Read the sliders and apply them. Returns True if a gain changed."""
+
+        if not self.open:
+            return False
+
+        changed = False
+
+        try:
+
+            for label, name, _ in self.SLIDERS:
+
+                position = cv2.getTrackbarPos(label, self.WINDOW)
+
+                # Only a slider that has been moved changes its gain, so
+                # a starting value like 20.3 is not rounded away.
+                if position == self.positions[name]:
+                    continue
+
+                self.positions[name] = position
+                value = position / 2.0
+
+                for pid in self.pids:
+
+                    old = getattr(pid, name)
+
+                    # Keep the integral term's tilt unchanged when Ki
+                    # moves, so the plate does not jump.
+                    if name == "ki" and hasattr(pid, "integral"):
+
+                        pid.integral = (
+                            pid.integral * old / value
+                            if value > 0 and old > 0
+                            else 0.0
+                        )
+
+                    setattr(pid, name, value)
+                    changed = True
+
+            kp, ki, kd = self.gains
+
+            panel = np.full((46, 460, 3), 40, dtype=np.uint8)
+
+            cv2.putText(
+                panel,
+                f"Kp {kp:g}   Ki {ki:g}   Kd {kd:g}",
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA
+            )
+
+            cv2.imshow(self.WINDOW, panel)
+
+        except cv2.error:
+
+            # The slider window was closed: keep the last gains
+            self.open = False
+
+        return changed
 
 
 # ==================================================
@@ -814,7 +929,10 @@ def main():
                 "dt_s",
                 "saturated",
                 "i_roll_deg",
-                "i_pitch_deg"
+                "i_pitch_deg",
+                "kp",
+                "ki",
+                "kd"
             ])
 
             print(
@@ -930,6 +1048,8 @@ def main():
         # ==========================================
 
         started = time.monotonic()
+
+        sliders = GainSliders([pid_x, pid_y])
 
         frame = cv2.resize(
             initial_frame,
@@ -1209,7 +1329,10 @@ def main():
                         round(
                             args.pitch_sign * pid_x.integral_term,
                             4
-                        )
+                        ),
+                        pid_x.kp,
+                        pid_x.ki,
+                        pid_x.kd
                     ])
 
             # ======================================
@@ -1417,6 +1540,11 @@ def main():
                     ),
 
                     (
+                        f"Kp={pid_x.kp:g} Ki={pid_x.ki:g} "
+                        f"Kd={pid_x.kd:g} (sliders)"
+                    ),
+
+                    (
                         limit_notice
                         or "Servo limits enforced"
                     ),
@@ -1432,6 +1560,9 @@ def main():
                 "Stewart Platform PID Control",
                 display
             )
+
+            # Apply the Kp / Ki / Kd sliders
+            sliders.update()
 
             key = cv2.waitKey(1) & 0xFF
 
@@ -1685,6 +1816,11 @@ def main():
 
         if csv_file is not None:
             csv_file.close()
+
+        print(
+            f"Gains at exit: --kp {pid_x.kp:g} "
+            f"--ki {pid_x.ki:g} --kd {pid_x.kd:g}"
+        )
 
         if active_time > 15.0:
 
